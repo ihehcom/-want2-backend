@@ -1,0 +1,260 @@
+// Schema de base de données WANT2
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle Utilisateur
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  phone       String?
+  avatar      String?
+  isVerified  Boolean  @default(false)
+  userMode    String @default("BUYER")
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  products          Product[]
+  offers            Offer[]           @relation("OfferBuyer")
+  receivedOffers    Offer[]           @relation("OfferSeller")
+  likes             Like[]
+  notifications     Notification[]
+  preferences       UserPreference?
+  authTokens        AuthToken[]
+  reportsMade       Report[]          @relation("ReportAuthor")
+  reportsReceived   Report[]          @relation("ReportTarget")
+  
+  @@map("users")
+}
+
+// Modèle Préférences Utilisateur
+model UserPreference {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Filtres de recherche
+  maxPrice              Int?
+  minPrice              Int?
+  preferredCategories   String? // JSON string
+  preferredBrands       String? // JSON string
+  excludedSellers       String? // JSON string
+  
+  // Préférences d'authentification
+  requireAuthenticated  Boolean  @default(false)
+  minAuthenticityScore  Float    @default(0.0)
+  
+  // Préférences de notification
+  emailNotifications    Boolean  @default(true)
+  pushNotifications     Boolean  @default(true)
+  offerNotifications    Boolean  @default(true)
+  likeNotifications     Boolean  @default(true)
+  
+  // Données ML pour recommandations
+  likedProducts         String? // JSON string
+  passedProducts        String? // JSON string
+  searchHistory         String? // JSON string
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("user_preferences")
+}
+
+// Modèle Produit  
+model Product {
+  id              String          @id @default(uuid())
+  title           String
+  description     String
+  price           Float
+  currency        String          @default("EUR")
+  category        String
+  brand           String?
+  condition       String
+  size            String?
+  color           String?
+  
+  // Authenticity (simulation blockchain)
+  authenticityScore Float         @default(0.5)
+  isAuthenticated   Boolean       @default(false)
+  certificationId   String?       // ID du certificat simulé
+  
+  // Media
+  images          String?         // JSON string des URLs
+  mainImage       String?         // URL image principale
+  
+  // Géolocalisation
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  
+  // Statut
+  status          String   @default("ACTIVE")
+  isPromoted      Boolean         @default(false)
+  promotedUntil   DateTime?
+  
+  // Seller
+  sellerId        String
+  seller          User            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  publishedAt     DateTime        @default(now())
+  
+  // Relations
+  offers          Offer[]
+  likes           Like[]
+  views           ProductView[]
+  reports         Report[]
+  
+  // Indexing
+  @@index([category])
+  @@index([brand])
+  @@index([price])
+  @@index([createdAt])
+  @@index([sellerId])
+  @@index([status])
+  @@map("products")
+}
+
+
+// Modèle Offre
+model Offer {
+  id            String       @id @default(uuid())
+  amount        Float
+  currency      String       @default("EUR")
+  message       String?
+  status        String  @default("PENDING")
+  expiresAt     DateTime?
+  
+  // Relations
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyerId       String
+  buyer         User         @relation("OfferBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId      String
+  seller        User         @relation("OfferSeller", fields: [sellerId], references: [id])
+  
+  // Contre-offres
+  parentOfferId String?
+  parentOffer   Offer?       @relation("OfferCounterOffers", fields: [parentOfferId], references: [id])
+  counterOffers Offer[]      @relation("OfferCounterOffers")
+  
+  // Timestamps
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  respondedAt   DateTime?
+  
+  @@index([productId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("offers")
+}
+
+
+// Modèle Like
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, productId])
+  @@index([productId])
+  @@index([userId])
+  @@map("likes")
+}
+
+// Modèle Vue Produit (pour analytics)
+model ProductView {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?  // null si utilisateur anonyme
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  
+  @@index([productId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("product_views")
+}
+
+// Modèle Notification
+model Notification {
+  id        String           @id @default(uuid())
+  type      String
+  title     String
+  message   String
+  data      String?          // JSON string
+  isRead    Boolean          @default(false)
+  
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+  
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+
+// Modèle Token d'authentification
+model AuthToken {
+  id          String    @id @default(uuid())
+  token       String    @unique
+  type        String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  isRevoked   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  
+  @@index([token])
+  @@index([userId])
+  @@map("auth_tokens")
+}
+
+
+// Modèle Rapport/Signalement
+model Report {
+  id          String     @id @default(uuid())
+  reason      String
+  description String?
+  status      String @default("PENDING")
+  
+  // Relations
+  authorId    String
+  author      User       @relation("ReportAuthor", fields: [authorId], references: [id])
+  targetId    String
+  target      User       @relation("ReportTarget", fields: [targetId], references: [id])
+  productId   String?
+  product     Product?   @relation(fields: [productId], references: [id])
+  
+  createdAt   DateTime   @default(now())
+  resolvedAt  DateTime?
+  
+  @@index([status])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+// Enums remplacés par des strings pour compatibilité SQLite

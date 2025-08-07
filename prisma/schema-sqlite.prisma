@@ -1,0 +1,230 @@
+// Schema de base de données WANT2 - Version SQLite
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle Utilisateur
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  name              String
+  phone             String?
+  avatar            String?
+  isVerified        Boolean   @default(false)
+  userMode          String    @default("BUYER") // BUYER, SELLER, BOTH
+  isEmailVerified   Boolean   @default(false)
+  bio               String?
+  location          String?
+  latitude          Float?
+  longitude         Float?
+  lastActiveAt      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  products          Product[]         @relation("ProductSeller")
+  offers            Offer[]           @relation("OfferBuyer")
+  receivedOffers    Offer[]           @relation("OfferSeller") 
+  likes             Like[]
+  notifications     Notification[]
+  views             ProductView[]
+  preferences       UserPreference?
+  tokens            Token[]
+  reports           Report[]          @relation("ReportReporter")
+  reportedItems     Report[]          @relation("ReportReported")
+
+  @@map("users")
+}
+
+// Préférences utilisateur
+model UserPreference {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Filtres de recherche
+  maxPrice              Int?
+  minPrice              Int?
+  preferredCategories   String?  // JSON string
+  preferredBrands       String?  // JSON string
+  excludedSellers       String?  // JSON string
+  
+  // Préférences d'authentification
+  requireAuthenticated  Boolean  @default(false)
+  minAuthenticityScore  Float    @default(0.0)
+  
+  // Préférences de notification
+  emailNotifications    Boolean  @default(true)
+  pushNotifications     Boolean  @default(true)
+  offerNotifications    Boolean  @default(true)
+  likeNotifications     Boolean  @default(true)
+  
+  // Données ML pour recommandations
+  likedProducts         String?  // JSON string
+  passedProducts        String?  // JSON string
+  searchHistory         String?  // JSON string
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("user_preferences")
+}
+
+// Modèle Produit
+model Product {
+  id                String      @id @default(uuid())
+  sellerId          String
+  seller            User        @relation("ProductSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  // Informations de base
+  title             String
+  description       String
+  price             Float
+  currency          String      @default("EUR")
+  
+  // Détails du produit
+  category          String
+  brand             String?
+  condition         String      // NEW, LIKE_NEW, VERY_GOOD, GOOD, ACCEPTABLE, DAMAGED
+  size              String?
+  color             String?
+  
+  // Localisation
+  location          String?
+  latitude          Float?
+  longitude         Float?
+  
+  // Media
+  images            String?     // JSON string
+  mainImage         String?
+  
+  // Authentification et scoring
+  authenticityScore Float       @default(0.0)
+  isAuthenticated   Boolean     @default(false)
+  
+  // Métadonnées
+  status            String      @default("ACTIVE") // DRAFT, ACTIVE, SOLD, PAUSED, DELETED, REPORTED
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relations
+  offers            Offer[]
+  likes             Like[]
+  views             ProductView[]
+  reports           Report[]
+
+  @@map("products")
+}
+
+// Modèle Offre
+model Offer {
+  id               String    @id @default(uuid())
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyerId          String
+  buyer            User      @relation("OfferBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           User      @relation("OfferSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  amount           Float
+  message          String?
+  status           String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, COUNTER_OFFERED, EXPIRED, CANCELLED
+  
+  // Système de contre-offres
+  parentOfferId    String?
+  parentOffer      Offer?    @relation("OfferCounters", fields: [parentOfferId], references: [id])
+  counterOffers    Offer[]   @relation("OfferCounters")
+  
+  // Timestamps
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  expiresAt        DateTime?
+  respondedAt      DateTime?
+
+  @@map("offers")
+}
+
+// Modèle Like
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("likes")
+}
+
+// Modèle Vue de Produit
+model ProductView {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@map("product_views")
+}
+
+// Modèle Notification
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type      String   // OFFER_RECEIVED, OFFER_ACCEPTED, etc.
+  title     String
+  message   String
+  data      String?  // JSON string
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// Modèle Token de session
+model Token {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // ACCESS, REFRESH, EMAIL_VERIFICATION, PASSWORD_RESET
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  @@map("tokens")
+}
+
+// Modèle Rapport
+model Report {
+  id              String   @id @default(uuid())
+  reporterId      String
+  reporter        User     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId  String?
+  reportedUser    User?    @relation("ReportReported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  reason          String   // SPAM, FAKE_PRODUCT, etc.
+  description     String?
+  status          String   @default("PENDING") // PENDING, REVIEWING, RESOLVED, DISMISSED
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  resolvedAt      DateTime?
+
+  @@map("reports")
+}
